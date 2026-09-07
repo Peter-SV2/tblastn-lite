@@ -234,10 +234,51 @@ static int hit_frame_offset(const Hit& h, long long nlen) {
 
 static int selftest();
 
+// double-clicked on Windows: no arguments and the console dies with the process,
+// so ask for the two paths instead of flashing the usage text.
+static bool g_pause = false;
+static void pause_exit() {
+  if (!g_pause) return;
+  std::cerr << "\nPress Enter to close...";
+  std::cin.clear();
+  std::string s;
+  std::getline(std::cin, s);
+}
+
+static std::string ask(const char* msg) {
+  std::cerr << msg;
+  std::string s;
+  if (!std::getline(std::cin, s)) return "";
+  while (!s.empty() && (s.back() == ' ' || s.back() == '\r' || s.back() == '"')) s.erase(s.size() - 1);
+  while (!s.empty() && (s[0] == ' ' || s[0] == '"')) s.erase(0, 1);
+  return s;  // drag-and-dropped paths arrive quoted
+}
+
 int main(int argc, char** argv) {
   init_tables();
   std::string qpath, dpath;
   Opts o;
+
+  if (argc == 1) {
+    g_pause = true;
+    atexit(pause_exit);
+    std::cerr << "tblastn-lite - find the DNA encoding a protein\n"
+                 "(drag a file onto this window to paste its path)\n\n";
+    qpath = ask("Protein FASTA : ");
+    dpath = ask("Genome FASTA  : ");
+    std::string e = ask("E-value cutoff [1e-5] : ");
+    if (!e.empty()) o.evalue = atof(e.c_str());
+    else o.evalue = 1e-5;
+    std::string out = ask("Save results to [blank = this window] : ");
+    o.show_aln = o.show_dna = true;
+    if (!out.empty() && !freopen(out.c_str(), "w", stdout)) {
+      std::cerr << "error: cannot write " << out << "\n";
+      return 1;
+    }
+    std::cerr << "\nsearching...\n";
+  }
+
+
   for (int i = 1; i < argc; i++) {
     std::string a = argv[i];
     bool needs = (a == "-q" || a == "--query" || a == "-d" || a == "--db" || a == "-e" ||
@@ -343,14 +384,23 @@ int main(int argc, char** argv) {
         std::string mid(h.len, ' ');
         for (int i = 0; i < h.len; i++)
           mid[i] = qa[i] == sa[i] ? qa[i] : (BLOSUM62[q[h.qs + i]][t[sa0 + i]] > 0 ? '+' : ' ');
-        printf("Query %6d  %s  %d\n             %s\nSbjct %6lld  %s  %lld\n\n",
-               h.qs + 1, qa.c_str(), h.qe + 1, mid.c_str(), h.ss, sa.c_str(), h.se);
+        const int W = 60;
+        for (int i = 0; i < h.len; i += W) {
+          int n = std::min(W, h.len - i);
+          long long s0 = h.frame > 0 ? h.ss + 3LL * i : h.ss - 3LL * i;
+          long long s1 = h.frame > 0 ? s0 + 3LL * n - 1 : s0 - 3LL * n + 1;
+          printf("Query %7d  %.*s  %d\n              %.*s\nSbjct %7lld  %.*s  %lld\n\n",
+                 h.qs + i + 1, n, qa.c_str() + i, h.qs + i + n, n, mid.c_str() + i, s0, n,
+                 sa.c_str() + i, s1);
+        }
       }
       if (o.show_dna)
         printf(">%s:%lld-%lld frame%+d\n%s\n", db[h.seqidx].id.c_str(), h.ss, h.se, h.frame,
                s.substr(off + 3 * sa0, 3 * h.len).c_str());
     }
+    if (g_pause) std::cerr << Q.id << ": " << hits.size() << " hits\n";
   }
+  fflush(stdout);
   return 0;
 }
 

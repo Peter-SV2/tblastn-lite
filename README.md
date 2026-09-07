@@ -8,7 +8,13 @@ and it does a 6-frame translated search.
 
 ## Get it
 
-Windows: grab [`tblastn_lite-v1.0.0-win64.exe`](https://github.com/Peter-SV2/tblastn-lite/releases/latest) and run it. Statically linked, no install.
+Windows: grab the `.exe` from [the latest release](https://github.com/Peter-SV2/tblastn-lite/releases/latest) and run it. Statically linked, no install, no runtime.
+
+Double-clicking works: with no arguments it asks for the two file paths (drag a
+file onto the window to paste its path) and keeps the window open. Everything
+below is the command-line form.
+
+SmartScreen will warn about an unsigned download - *More info -> Run anyway*.
 
 ## Build
 
