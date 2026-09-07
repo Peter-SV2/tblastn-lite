@@ -1,6 +1,10 @@
 // tblastn-lite - command-line front end.  See tblastn_core.h for the search itself.
 #include "tblastn_core.h"
 
+// Not assert(): CMake's Release build defines NDEBUG, where an assert-based
+// check compiles to nothing and prints "OK" without having tested anything.
+#define CHECK(x) if (!(x)) { fprintf(stderr, "selftest FAILED at line %d: %s\n", __LINE__, #x); return 1; }
+
 static int selftest();
 
 // double-clicked on Windows: no arguments and the console dies with the process,
@@ -123,12 +127,12 @@ int main(int argc, char** argv) {
 // ---------------------------------------------------------------- selftest ---
 static int selftest() {
   init_tables();
-  assert(revcomp("ACGTNacgt") == "acgtNACGT");
+  CHECK(revcomp("ACGTNacgt") == "acgtNACGT");
   std::vector<signed char> t;
   translate("ATGGCTTAA", 0, t);
-  assert(t.size() == 3 && AA[t[0]] == 'M' && AA[t[1]] == 'A' && AA[t[2]] == '*');
+  CHECK(t.size() == 3 && AA[t[0]] == 'M' && AA[t[1]] == 'A' && AA[t[2]] == '*');
   translate("GATGGCTTAA", 1, t);
-  assert(AA[t[0]] == 'M');
+  CHECK(AA[t[0]] == 'M');
 
   // plant a known protein in random DNA, then find it from both strands
   const char* prot = "MKAIVLTYNQEWFRSGHDPLLNQVKACGEMTIYRDWVSAHFPNGKLMDEQRTYIVAKLNG";
@@ -139,7 +143,7 @@ static int selftest() {
         dna += "TCAG"[c / 16]; dna += "TCAG"[(c / 4) % 4]; dna += "TCAG"[c % 4];
         break;
       }
-  assert(dna.size() == 3 * strlen(prot));
+  CHECK(dna.size() == 3 * strlen(prot));
   std::string pad;
   srand(1);
   for (int i = 0; i < 500; i++) pad += "ACGT"[rand() % 4];
@@ -158,18 +162,18 @@ static int selftest() {
       translate(r, f - 1, t);
       scan_frame(S, t, -f, 0, (long long)g.size(), hits);
     }
-    assert(!hits.empty());
+    CHECK(!hits.empty());
     std::sort(hits.begin(), hits.end(),
               [](const Hit& a, const Hit& b) { return a.bits > b.bits; });
     const Hit& h = hits[0];
-    assert(h.len == (int)q.size() && h.ident == (int)q.size());  // full-length exact hit
-    assert(h.qs == 0 && h.qe == (int)q.size() - 1);
-    assert(h.evalue < 1e-20);
+    CHECK(h.len == (int)q.size() && h.ident == (int)q.size());  // full-length exact hit
+    CHECK(h.qs == 0 && h.qe == (int)q.size() - 1);
+    CHECK(h.evalue < 1e-20);
     long long lo = std::min(h.ss, h.se), hi = std::max(h.ss, h.se);
-    assert(hi - lo + 1 == (long long)dna.size());
+    CHECK(hi - lo + 1 == (long long)dna.size());
     std::string got = g.substr(lo - 1, dna.size());
-    assert(got == (h.frame > 0 ? dna : revcomp(dna)));
-    assert(hit_frame_offset(h, (long long)g.size()) * 3 + abs(h.frame) - 1 ==
+    CHECK(got == (h.frame > 0 ? dna : revcomp(dna)));
+    CHECK(hit_frame_offset(h, (long long)g.size()) * 3 + abs(h.frame) - 1 ==
            (int)(h.frame > 0 ? lo - 1 : (long long)g.size() - hi));
   }
   // the threaded driver must find the same thing as the raw frame scan
@@ -180,8 +184,8 @@ static int selftest() {
   db.rc.push_back(revcomp(genome));
   db.len = (long long)genome.size();
   std::vector<Hit> hits = search(q, db, o, 4);
-  assert(!hits.empty() && hits[0].ident == (int)q.size());
-  assert(format_hits("p", q, db, hits, o).find("plant") != std::string::npos);
+  CHECK(!hits.empty() && hits[0].ident == (int)q.size());
+  CHECK(format_hits("p", q, db, hits, o).find("plant") != std::string::npos);
 
   // proteome TSV: columns found by name, not position, and accession/gene lookup
   const char* tmp = "tblastn_selftest.tsv";
@@ -194,12 +198,12 @@ static int selftest() {
   }
   std::vector<Rec> tsv = read_queries(tmp);
   remove(tmp);
-  assert(tsv.size() == 2);                       // the row with no sequence is dropped
-  assert(tsv[0].id == "P12345" && tsv[0].seq == "MKA");
-  assert(tsv[0].desc.substr(0, 4) == "fakA");    // first gene name, then protein name
-  assert(find_accession(tsv, "p12345") == 0);    // accession, case-insensitive
-  assert(find_accession(tsv, "otherB") == 1);    // or gene name
-  assert(find_accession(tsv, "nope") == -1);
+  CHECK(tsv.size() == 2);                       // the row with no sequence is dropped
+  CHECK(tsv[0].id == "P12345" && tsv[0].seq == "MKA");
+  CHECK(tsv[0].desc.substr(0, 4) == "fakA");    // first gene name, then protein name
+  CHECK(find_accession(tsv, "p12345") == 0);    // accession, case-insensitive
+  CHECK(find_accession(tsv, "otherB") == 1);    // or gene name
+  CHECK(find_accession(tsv, "nope") == -1);
   printf("selftest OK\n");
   return 0;
 }

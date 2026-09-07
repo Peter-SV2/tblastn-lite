@@ -368,51 +368,64 @@ static std::vector<Hit> search(const std::vector<signed char>& q, const Db& db, 
   return hits;
 }
 
-// tab-separated table, optionally followed by alignments and matching DNA
+// one tab-separated table row for a hit
+static std::string format_hit_row(const std::string& qid, const Db& db, const Hit& h) {
+  char buf[1024];
+  snprintf(buf, sizeof buf, "%s\t%s\t%.1f\t%d\t%d\t%+d\t%d\t%d\t%lld\t%lld\t%.2g\t%.1f\n",
+           qid.c_str(), db.recs[h.seqidx].id.c_str(), 100.0 * h.ident / h.len, h.len,
+           h.len - h.ident, h.frame, h.qs + 1, h.qe + 1, h.ss, h.se, h.evalue, h.bits);
+  return buf;
+}
+
+// the alignment and/or the matching DNA for one hit
+static std::string format_hit_detail(const std::vector<signed char>& q, const Db& db,
+                                     const Hit& h, bool aln, bool dna) {
+  std::string out;
+  if (!aln && !dna) return out;
+  char buf[4096];
+  const std::string& s = h.frame > 0 ? db.recs[h.seqidx].seq : db.rc[h.seqidx];
+  int off = abs(h.frame) - 1;
+  std::vector<signed char> t;
+  translate(s, off, t);
+  int sa0 = hit_frame_offset(h, (long long)db.recs[h.seqidx].seq.size());
+  if (aln) {
+    std::string qa = aa_string(q, h.qs, h.len), sa = aa_string(t, sa0, h.len);
+    std::string mid(h.len, ' ');
+    for (int i = 0; i < h.len; i++)
+      mid[i] = qa[i] == sa[i] ? qa[i] : (BLOSUM62[q[h.qs + i]][t[sa0 + i]] > 0 ? '+' : ' ');
+    const int W = 60;
+    for (int i = 0; i < h.len; i += W) {
+      int n = std::min(W, h.len - i);
+      long long s0 = h.frame > 0 ? h.ss + 3LL * i : h.ss - 3LL * i;
+      long long s1 = h.frame > 0 ? s0 + 3LL * n - 1 : s0 - 3LL * n + 1;
+      snprintf(buf, sizeof buf,
+               "Query %7d  %.*s  %d\n              %.*s\nSbjct %7lld  %.*s  %lld\n\n",
+               h.qs + i + 1, n, qa.c_str() + i, h.qs + i + n, n, mid.c_str() + i, s0, n,
+               sa.c_str() + i, s1);
+      out += buf;
+    }
+  }
+  if (dna) {
+    snprintf(buf, sizeof buf, ">%s:%lld-%lld frame%+d\n", db.recs[h.seqidx].id.c_str(), h.ss,
+             h.se, h.frame);
+    out += buf;
+    std::string seq = s.substr(off + 3 * sa0, 3 * h.len);
+    for (size_t i = 0; i < seq.size(); i += 70) out += seq.substr(i, 70) + "\n";
+  }
+  return out;
+}
+
+// the whole report: the table, and under each row whatever detail was asked for
 static std::string format_hits(const std::string& qid, const std::vector<signed char>& q,
                                const Db& db, const std::vector<Hit>& hits, const Opts& o) {
-  char buf[4096];
-  std::string out;
+  char buf[256];
   snprintf(buf, sizeof buf, "# query: %s (%d aa)  hits: %d\n", qid.c_str(), (int)q.size(),
            (int)hits.size());
-  out += buf;
+  std::string out = buf;
   out += "# qid\tsid\t%id\tlen\tmism\tframe\tqstart\tqend\tsstart\tsend\tevalue\tbits\n";
-  std::vector<signed char> t;
-  for (size_t hi = 0; hi < hits.size(); hi++) {
-    const Hit& h = hits[hi];
-    snprintf(buf, sizeof buf, "%s\t%s\t%.1f\t%d\t%d\t%+d\t%d\t%d\t%lld\t%lld\t%.2g\t%.1f\n",
-             qid.c_str(), db.recs[h.seqidx].id.c_str(), 100.0 * h.ident / h.len, h.len,
-             h.len - h.ident, h.frame, h.qs + 1, h.qe + 1, h.ss, h.se, h.evalue, h.bits);
-    out += buf;
-    if (!o.show_aln && !o.show_dna) continue;
-    const std::string& s = h.frame > 0 ? db.recs[h.seqidx].seq : db.rc[h.seqidx];
-    int off = abs(h.frame) - 1;
-    translate(s, off, t);
-    int sa0 = hit_frame_offset(h, (long long)db.recs[h.seqidx].seq.size());
-    if (o.show_aln) {
-      std::string qa = aa_string(q, h.qs, h.len), sa = aa_string(t, sa0, h.len);
-      std::string mid(h.len, ' ');
-      for (int i = 0; i < h.len; i++)
-        mid[i] = qa[i] == sa[i] ? qa[i] : (BLOSUM62[q[h.qs + i]][t[sa0 + i]] > 0 ? '+' : ' ');
-      const int W = 60;
-      for (int i = 0; i < h.len; i += W) {
-        int n = std::min(W, h.len - i);
-        long long s0 = h.frame > 0 ? h.ss + 3LL * i : h.ss - 3LL * i;
-        long long s1 = h.frame > 0 ? s0 + 3LL * n - 1 : s0 - 3LL * n + 1;
-        snprintf(buf, sizeof buf,
-                 "Query %7d  %.*s  %d\n              %.*s\nSbjct %7lld  %.*s  %lld\n\n",
-                 h.qs + i + 1, n, qa.c_str() + i, h.qs + i + n, n, mid.c_str() + i, s0, n,
-                 sa.c_str() + i, s1);
-        out += buf;
-      }
-    }
-    if (o.show_dna) {
-      snprintf(buf, sizeof buf, ">%s:%lld-%lld frame%+d\n", db.recs[h.seqidx].id.c_str(), h.ss,
-               h.se, h.frame);
-      out += buf;
-      std::string dna = s.substr(off + 3 * sa0, 3 * h.len);
-      for (size_t i = 0; i < dna.size(); i += 70) out += dna.substr(i, 70) + "\n";
-    }
+  for (size_t i = 0; i < hits.size(); i++) {
+    out += format_hit_row(qid, db, hits[i]);
+    out += format_hit_detail(q, db, hits[i], o.show_aln, o.show_dna);
   }
   return out;
 }

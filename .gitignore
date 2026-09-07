@@ -2,3 +2,5 @@
 *.o
 tblastn_lite
 K12.fasta
+build/
+build-*/

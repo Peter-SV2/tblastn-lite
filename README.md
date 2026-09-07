@@ -2,37 +2,49 @@
 
 Find the DNA that encodes a protein. No dependencies, no database build step, no
 BLAST install: point it at a protein FASTA and a nucleotide FASTA and it does a
-6-frame translated search. Ships as a command-line tool and a small Win32 GUI,
+6-frame translated search. Ships as a command-line tool and a Dear ImGui window,
 both over one header of search code.
 
 820-aa protein vs the whole *E. coli* K-12 genome (4.6 Mb): **0.18 s** on 8 threads.
 
 ## Get it
 
-Windows: grab the `.exe` files from [the latest release](https://github.com/Peter-SV2/tblastn-lite/releases/latest) - statically linked, no install, no runtime.
+Windows: grab the `.exe` files from [the latest release](https://github.com/Peter-SV2/tblastn-lite/releases/latest) - statically linked, no install, no runtime, nothing to copy beside them.
 
-- **`tblastn_gui.exe`** - double-click it. Pick the protein source and a genome FASTA (or drag them onto the window), choose an entry, press Search.
-- **`tblastn_lite.exe`** - the command-line version; with no arguments it prompts for the paths.
+- **`tblastn_gui.exe`** - double-click it. Open a protein file and a genome, find
+  your protein by typing part of its accession, gene or name, press Search.
+  Files given on the command line or dropped on the window are sorted into the
+  right box by what is in them, not by which box you aimed at.
+- **`tblastn_lite.exe`** - the same search without the window; with no arguments
+  it prompts for the paths.
+
+The alignment pane is a read-only text box, not a label: select any part of it
+with the mouse, or Ctrl+A / Ctrl+C. **Copy report** puts the whole thing - table,
+alignments, matching DNA - on the clipboard, and **Save report...** writes the
+same bytes to a file.
 
 ![the GUI](docs/gui.png)
 
 ## Build
 
-```bash
-make        # command-line tool
-make gui    # Win32 GUI (Windows only)
-```
-
-Or directly:
+The command-line tool is a header and a `.cpp`, and builds anywhere:
 
 ```bash
-g++ -O3 -std=c++17 -static -o tblastn_lite tblastn_lite.cpp -pthread
-g++ -O3 -std=c++17 -static -mwindows -o tblastn_gui tblastn_gui.cpp -pthread -lcomdlg32 -lshell32
+make            # or: g++ -O3 -std=c++17 -static -o tblastn_lite tblastn_lite.cpp -pthread
+make test
 ```
 
-`-static` gives a single portable `.exe` on Windows/MinGW. The GUI is plain Win32
-- no Qt, no GTK, no toolkit of any kind - so it only builds on Windows; the
-command-line tool builds anywhere.
+The GUI is Dear ImGui on Win32 + Direct3D 11, so it is Windows-only and CMake
+fetches ImGui at a pinned tag:
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target check     # the self-check, no GPU and no window needed
+cmake --build build                    # tblastn_gui.exe and tblastn_lite.exe
+```
+
+It does not spin: `WaitMessage` blocks until there is input, so an idle window
+costs no CPU. It draws nothing while it is not asked to.
 
 SmartScreen will warn about an unsigned download - *More info -> Run anyway*.
 
@@ -53,9 +65,10 @@ name rather than position (extra columns are ignored), and rows with no sequence
 are skipped. Without `-a`, every entry in the file is searched in turn - fine for
 a FASTA of a few proteins, slow for a 4,000-entry proteome.
 
-In the GUI the same file goes in the **Protein file** box and its entries fill
-the **Accession** dropdown, labelled with gene and description; type an
-accession to jump to it.
+In the GUI the same file goes in the **Protein** box and the search field under
+it filters the entries as you type - accession, gene name or any word of the
+description. Typing `aspartokinase` against the 4,403-entry *E. coli* proteome
+leaves thrA, metL and lysC to choose between.
 
 ## Use
 
@@ -127,7 +140,7 @@ paralogues at 1e-12.
 |------|------|
 | `tblastn_core.h` | the whole search: translation, seeding, extension, statistics, formatting |
 | `tblastn_lite.cpp` | command-line front end + `--selftest` |
-| `tblastn_gui.cpp` | Win32 GUI front end |
+| `tblastn_imgui.cpp` | the GUI: Win32 + D3D11 host loop and the ImGui panel |
 
 `test/ecoli_5.tsv` is a five-row extract of UniProt proteome UP000000625
 (*E. coli* K-12), used by the examples; UniProt data is CC BY 4.0.
@@ -138,9 +151,16 @@ paralogues at 1e-12.
 make test
 ```
 
-`--selftest` checks translation, reverse complement, and an end-to-end search
-for a protein planted in random DNA on both strands, asserting full-length
-recovery and exact coordinate round-tripping.
+`--selftest` checks translation, reverse complement, the proteome-TSV reader
+with its columns shuffled, and an end-to-end search for a protein planted in
+random DNA on both strands - full-length recovery, and coordinates that round
+-trip back to the planted bases.
+
+It does not use `assert`. A CMake Release build defines `NDEBUG`, where an
+assert-based check compiles to nothing and prints `selftest OK` without having
+tested anything; `CHECK` is an `if` and a return, so it survives. Shifting the
+minus-strand start by one base fails it in a Release build - which is the point,
+because that is the build people run.
 
 ## Licence
 
