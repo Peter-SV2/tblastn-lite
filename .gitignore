@@ -1,0 +1,4 @@
+*.exe
+*.o
+tblastn_lite
+K12.fasta
