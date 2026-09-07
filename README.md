@@ -1,34 +1,40 @@
 # tblastn-lite
 
-Find the DNA that encodes a protein. One C++ file, no dependencies, no database
-build step, no BLAST install: point it at a protein FASTA and a nucleotide FASTA
-and it does a 6-frame translated search.
+Find the DNA that encodes a protein. No dependencies, no database build step, no
+BLAST install: point it at a protein FASTA and a nucleotide FASTA and it does a
+6-frame translated search. Ships as a command-line tool and a small Win32 GUI,
+both over one header of search code.
 
 820-aa protein vs the whole *E. coli* K-12 genome (4.6 Mb): **0.18 s** on 8 threads.
 
 ## Get it
 
-Windows: grab the `.exe` from [the latest release](https://github.com/Peter-SV2/tblastn-lite/releases/latest) and run it. Statically linked, no install, no runtime.
+Windows: grab the `.exe` files from [the latest release](https://github.com/Peter-SV2/tblastn-lite/releases/latest) - statically linked, no install, no runtime.
 
-Double-clicking works: with no arguments it asks for the two file paths (drag a
-file onto the window to paste its path) and keeps the window open. Everything
-below is the command-line form.
+- **`tblastn_gui.exe`** - double-click it. Pick the two FASTA files (or drag them onto the window), press Search.
+- **`tblastn_lite.exe`** - the command-line version; with no arguments it prompts for the paths.
 
-SmartScreen will warn about an unsigned download - *More info -> Run anyway*.
+![the GUI](docs/gui.png)
 
 ## Build
 
 ```bash
-make
+make        # command-line tool
+make gui    # Win32 GUI (Windows only)
 ```
 
 Or directly:
 
 ```bash
 g++ -O3 -std=c++17 -static -o tblastn_lite tblastn_lite.cpp -pthread
+g++ -O3 -std=c++17 -static -mwindows -o tblastn_gui tblastn_gui.cpp -pthread -lcomdlg32 -lshell32
 ```
 
-`-static` gives a single portable `.exe` on Windows/MinGW.
+`-static` gives a single portable `.exe` on Windows/MinGW. The GUI is plain Win32
+- no Qt, no GTK, no toolkit of any kind - so it only builds on Windows; the
+command-line tool builds anywhere.
+
+SmartScreen will warn about an unsigned download - *More info -> Run anyway*.
 
 ## Use
 
@@ -92,6 +98,14 @@ paralogues at 1e-12.
 - **No low-complexity (SEG) filter.** A query full of `PPPPQQQQ` will hit noise.
 - **No spliced alignment.** Eukaryotic genes with introns give one HSP per exon.
 - Sequences are held in memory (genome-sized is fine; don't feed it all of nt).
+
+## Files
+
+| file | what |
+|------|------|
+| `tblastn_core.h` | the whole search: translation, seeding, extension, statistics, formatting |
+| `tblastn_lite.cpp` | command-line front end + `--selftest` |
+| `tblastn_gui.cpp` | Win32 GUI front end |
 
 ## Test
 
