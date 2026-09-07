@@ -6,6 +6,10 @@ and it does a 6-frame translated search.
 
 820-aa protein vs the whole *E. coli* K-12 genome (4.6 Mb): **0.18 s** on 8 threads.
 
+## Get it
+
+Windows: grab [`tblastn_lite-v1.0.0-win64.exe`](https://github.com/Peter-SV2/tblastn-lite/releases/latest) and run it. Statically linked, no install.
+
 ## Build
 
 ```bash
