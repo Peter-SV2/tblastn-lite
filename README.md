@@ -11,7 +11,7 @@ both over one header of search code.
 
 Windows: grab the `.exe` files from [the latest release](https://github.com/Peter-SV2/tblastn-lite/releases/latest) - statically linked, no install, no runtime.
 
-- **`tblastn_gui.exe`** - double-click it. Pick the two FASTA files (or drag them onto the window), press Search.
+- **`tblastn_gui.exe`** - double-click it. Pick the protein source and a genome FASTA (or drag them onto the window), choose an entry, press Search.
 - **`tblastn_lite.exe`** - the command-line version; with no arguments it prompts for the paths.
 
 ![the GUI](docs/gui.png)
@@ -35,6 +35,27 @@ g++ -O3 -std=c++17 -static -mwindows -o tblastn_gui tblastn_gui.cpp -pthread -lc
 command-line tool builds anywhere.
 
 SmartScreen will warn about an unsigned download - *More info -> Run anyway*.
+
+## Picking the protein
+
+The protein can come from a FASTA, or straight from a **UniProt proteome TSV**
+- the tab-separated export with `Entry` and `Sequence` columns. Whole proteomes
+are the convenient unit to keep on disk, and picking a gene out of one by
+accession beats cutting a FASTA by hand:
+
+```bash
+./tblastn_lite -q UP000000625.tsv -a P00561 -d genome.fna     # accession
+./tblastn_lite -q UP000000625.tsv -a thrA   -d genome.fna     # or gene name
+```
+
+The file type is detected from its first character, columns are found by header
+name rather than position (extra columns are ignored), and rows with no sequence
+are skipped. Without `-a`, every entry in the file is searched in turn - fine for
+a FASTA of a few proteins, slow for a 4,000-entry proteome.
+
+In the GUI the same file goes in the **Protein file** box and its entries fill
+the **Accession** dropdown, labelled with gene and description; type an
+accession to jump to it.
 
 ## Use
 
@@ -63,7 +84,8 @@ that second one is usually the point:
 
 | flag | default | meaning |
 |------|---------|---------|
-| `-q, --query` | – | protein FASTA (multiple queries fine) |
+| `-q, --query` | – | protein FASTA, or a UniProt proteome TSV |
+| `-a, --acc` | – | one entry by accession or gene name (default: all entries) |
 | `-d, --db` | – | nucleotide FASTA (multiple sequences fine) |
 | `-e, --evalue` | 10 | E-value cutoff |
 | `-T, --thresh` | 13 | neighbourhood word threshold; **lower = more sensitive, slower** |
@@ -106,6 +128,9 @@ paralogues at 1e-12.
 | `tblastn_core.h` | the whole search: translation, seeding, extension, statistics, formatting |
 | `tblastn_lite.cpp` | command-line front end + `--selftest` |
 | `tblastn_gui.cpp` | Win32 GUI front end |
+
+`test/ecoli_5.tsv` is a five-row extract of UniProt proteome UP000000625
+(*E. coli* K-12), used by the examples; UniProt data is CC BY 4.0.
 
 ## Test
 

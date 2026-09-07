@@ -12,7 +12,6 @@
 #include <cstring>
 #include <fstream>
 #include <stdexcept>
-#include <stdexcept>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -96,6 +95,77 @@ static std::vector<Rec> read_fasta(const std::string& path) {
   }
   if (recs.empty()) throw std::runtime_error("no FASTA sequences in " + path);
   return recs;
+}
+
+// UniProt proteome table (Entry / Protein names / Gene Names / Sequence / ...).
+// Columns are found by header name, not position, so extra columns don't matter.
+static std::vector<Rec> read_proteome_tsv(const std::string& path) {
+  std::ifstream in(path);
+  if (!in) throw std::runtime_error("cannot open " + path);
+  std::string line;
+  if (!std::getline(in, line)) throw std::runtime_error("empty file: " + path);
+  if (!line.empty() && line.back() == '\r') line.pop_back();
+  int c_entry = -1, c_seq = -1, c_gene = -1, c_name = -1, col = 0;
+  for (size_t i = 0, j; i <= line.size(); i = j + 1, col++) {
+    j = std::min(line.find('\t', i), line.size());
+    std::string h = line.substr(i, j - i);
+    if (h == "Entry") c_entry = col;
+    else if (h == "Sequence") c_seq = col;
+    else if (h == "Gene Names") c_gene = col;
+    else if (h == "Protein names") c_name = col;
+    if (j == line.size()) break;
+  }
+  if (c_entry < 0 || c_seq < 0)
+    throw std::runtime_error(path + ": need 'Entry' and 'Sequence' columns "
+                             "(UniProt TSV export); got: " + line.substr(0, 120));
+  std::vector<Rec> recs;
+  while (std::getline(in, line)) {
+    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (line.empty()) continue;
+    std::vector<std::string> f;
+    for (size_t i = 0, j; i <= line.size(); i = j + 1) {
+      j = std::min(line.find('\t', i), line.size());
+      f.push_back(line.substr(i, j - i));
+      if (j == line.size()) break;
+    }
+    if ((int)f.size() <= std::max(c_entry, c_seq)) continue;
+    if (f[c_entry].empty() || f[c_seq].empty()) continue;
+    Rec r;
+    r.id = f[c_entry];
+    r.seq = f[c_seq];
+    if (c_gene >= 0 && c_gene < (int)f.size() && !f[c_gene].empty()) {
+      std::string g = f[c_gene].substr(0, f[c_gene].find(' '));  // first gene name only
+      r.desc = g;
+    }
+    if (c_name >= 0 && c_name < (int)f.size() && !f[c_name].empty())
+      r.desc += (r.desc.empty() ? "" : "  ") + f[c_name];
+    recs.push_back(r);
+  }
+  if (recs.empty()) throw std::runtime_error("no entries in " + path);
+  return recs;
+}
+
+// protein FASTA or UniProt proteome TSV, whichever the file turns out to be
+static std::vector<Rec> read_queries(const std::string& path) {
+  std::ifstream in(path);
+  if (!in) throw std::runtime_error("cannot open " + path);
+  int c = in.peek();
+  in.close();
+  return c == '>' ? read_fasta(path) : read_proteome_tsv(path);
+}
+
+// accession, or gene name, case-insensitive; -1 if absent
+static inline int find_accession(const std::vector<Rec>& recs, const std::string& acc) {
+  std::string a = acc;
+  for (size_t i = 0; i < a.size(); i++) a[i] = (char)toupper((unsigned char)a[i]);
+  for (int pass = 0; pass < 2; pass++)
+    for (size_t i = 0; i < recs.size(); i++) {
+      const std::string& s = pass == 0 ? recs[i].id : recs[i].desc;
+      std::string t = s.substr(0, s.find(' '));
+      for (size_t k = 0; k < t.size(); k++) t[k] = (char)toupper((unsigned char)t[k]);
+      if (t == a) return (int)i;
+    }
+  return -1;
 }
 
 static std::string revcomp(const std::string& s) {

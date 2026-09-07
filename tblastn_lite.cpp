@@ -25,7 +25,7 @@ static std::string ask(const char* msg) {
 
 int main(int argc, char** argv) {
   init_tables();
-  std::string qpath, dpath;
+  std::string qpath, dpath, acc;
   Opts o;
 
   if (argc == 1) {
@@ -33,7 +33,8 @@ int main(int argc, char** argv) {
     atexit(pause_exit);
     std::cerr << "tblastn-lite - find the DNA encoding a protein\n"
                  "(drag a file onto this window to paste its path)\n\n";
-    qpath = ask("Protein FASTA : ");
+    qpath = ask("Protein FASTA or proteome TSV : ");
+    acc = ask("Accession (blank = all entries) : ");
     dpath = ask("Genome FASTA  : ");
     std::string e = ask("E-value cutoff [1e-5] : ");
     o.evalue = e.empty() ? 1e-5 : atof(e.c_str());
@@ -50,13 +51,15 @@ int main(int argc, char** argv) {
     std::string a = argv[i];
     bool needs = (a == "-q" || a == "--query" || a == "-d" || a == "--db" || a == "-e" ||
                   a == "--evalue" || a == "-T" || a == "--thresh" || a == "-X" ||
-                  a == "--xdrop" || a == "-t" || a == "--threads" || a == "-m" || a == "--max");
+                  a == "--xdrop" || a == "-t" || a == "--threads" || a == "-m" ||
+                  a == "--max" || a == "-a" || a == "--acc");
     std::string v;
     if (needs) {
       if (i + 1 >= argc) { std::cerr << "error: " << a << " needs a value\n"; return 1; }
       v = argv[++i];
     }
     if (a == "-q" || a == "--query") qpath = v;
+    else if (a == "-a" || a == "--acc") acc = v;
     else if (a == "-d" || a == "--db") dpath = v;
     else if (a == "-e" || a == "--evalue") o.evalue = atof(v.c_str());
     else if (a == "-T" || a == "--thresh") o.thresh = atoi(v.c_str());
@@ -73,6 +76,9 @@ int main(int argc, char** argv) {
     std::cerr <<
       "tblastn-lite - find the DNA encoding a protein (6-frame translated search)\n\n"
       "usage: tblastn_lite -q protein.fasta -d genome.fasta [options]\n"
+      "       tblastn_lite -q proteome.tsv -a P00561 -d genome.fasta\n\n"
+      "  -q FILE    protein FASTA, or a UniProt proteome TSV (Entry+Sequence columns)\n"
+      "  -a ACC     one entry by accession or gene name (default: every entry)\n"
       "  -e FLOAT   E-value cutoff (default 10)\n"
       "  -T INT     neighbourhood word threshold (default 13; lower = more sensitive)\n"
       "  -X INT     ungapped X-drop (default 16)\n"
@@ -90,7 +96,12 @@ int main(int argc, char** argv) {
   std::vector<Rec> queries;
   try {
     db = load_db(dpath);
-    queries = read_fasta(qpath);
+    queries = read_queries(qpath);
+    if (!acc.empty()) {
+      int i = find_accession(queries, acc);
+      if (i < 0) throw std::runtime_error("no entry '" + acc + "' in " + qpath);
+      queries = std::vector<Rec>(1, queries[i]);
+    }
   } catch (const std::exception& e) {
     std::cerr << "error: " << e.what() << "\n";
     return 1;
@@ -99,6 +110,8 @@ int main(int argc, char** argv) {
   for (size_t i = 0; i < queries.size(); i++) {
     std::vector<signed char> q = encode_protein(queries[i].seq);
     if (q.size() < 3) { std::cerr << "skipping short query " << queries[i].id << "\n"; continue; }
+    if (!queries[i].desc.empty())
+      printf("# %s  %s\n", queries[i].id.c_str(), queries[i].desc.c_str());
     std::vector<Hit> hits = search(q, db, o, o.threads);
     fputs(format_hits(queries[i].id, q, db, hits, o).c_str(), stdout);
     if (g_pause) std::cerr << queries[i].id << ": " << hits.size() << " hits\n";
@@ -169,6 +182,24 @@ static int selftest() {
   std::vector<Hit> hits = search(q, db, o, 4);
   assert(!hits.empty() && hits[0].ident == (int)q.size());
   assert(format_hits("p", q, db, hits, o).find("plant") != std::string::npos);
+
+  // proteome TSV: columns found by name, not position, and accession/gene lookup
+  const char* tmp = "tblastn_selftest.tsv";
+  {
+    std::ofstream f(tmp);
+    f << "Length\tEntry\tJunk\tProtein names\tGene Names\tSequence\n"
+      << "3\tP12345\t-\tFake protein\tfakA b0001\tMKA\n"
+      << "4\tQ99999\t-\tOther\totherB\tMKAI\n"
+      << "0\tR00000\t-\tNo sequence\tnoseq\t\n";
+  }
+  std::vector<Rec> tsv = read_queries(tmp);
+  remove(tmp);
+  assert(tsv.size() == 2);                       // the row with no sequence is dropped
+  assert(tsv[0].id == "P12345" && tsv[0].seq == "MKA");
+  assert(tsv[0].desc.substr(0, 4) == "fakA");    // first gene name, then protein name
+  assert(find_accession(tsv, "p12345") == 0);    // accession, case-insensitive
+  assert(find_accession(tsv, "otherB") == 1);    // or gene name
+  assert(find_accession(tsv, "nope") == -1);
   printf("selftest OK\n");
   return 0;
 }
